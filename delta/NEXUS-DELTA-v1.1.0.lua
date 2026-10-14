@@ -1,6 +1,6 @@
 --[[
-  NEXUS DELTA • Update System v1.1.0
-  Dialog update clean + progress asli (download dicek dulu sebelum dijalankan)
+  NEXUS UPDATE • NEXUS DELTA v1.1.0
+  Dialog update clean + progress asli + notifikasi "Update selesai"
 ]]
 
 local VERSION = "1.1.0"
@@ -10,6 +10,10 @@ local LATEST_SCRIPT_URL = "https://raw.githubusercontent.com/rafingepet-cyber/ro
 -- true  = ada tombol "Nanti saja" (update opsional)
 -- false = update wajib (dialog tidak bisa ditutup)
 local ALLOW_SKIP = false
+
+-- Teks "Kenapa harus update?" (singkat, maks ~3 baris).
+-- Kalau API kamu mengirim field "reason" atau "notes", itu yang dipakai.
+local DEFAULT_REASON = "Versi lama sudah tidak didukung. Update membawa perbaikan bug, fitur baru, dan performa lebih stabil."
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -68,6 +72,9 @@ if not isOutdated(VERSION, requiredVersion) then
     return
 end
 
+local reasonText = tostring((configData and (configData.reason or configData.notes)) or DEFAULT_REASON)
+reasonText = (reasonText:gsub("&", "&amp;"):gsub("<", "&lt;"))
+
 --==================================================
 -- HELPER UI
 --==================================================
@@ -93,19 +100,89 @@ local function rgbTag(c)
 end
 
 --==================================================
+-- NOTIFIKASI "UPDATE SELESAI"
+--==================================================
+local function showDoneToast(ver)
+    local old = playerGui:FindFirstChild("NEXUS_UPDATE_TOAST")
+    if old then old:Destroy() end
+
+    local toastGui = make("ScreenGui", {
+        Name = "NEXUS_UPDATE_TOAST",
+        ResetOnSpawn = false,
+        IgnoreGuiInset = true,
+        DisplayOrder = 1000,
+    }, playerGui)
+
+    local toast = make("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0, -90),
+        Size = UDim2.fromOffset(310, 62),
+        BackgroundColor3 = C.bg,
+        BorderSizePixel = 0,
+    }, toastGui)
+    round(toast, 16)
+    make("UIStroke", {Color = C.green, Thickness = 1.2, Transparency = 0.3}, toast)
+
+    local check = make("Frame", {
+        Position = UDim2.fromOffset(14, 15),
+        Size = UDim2.fromOffset(32, 32),
+        BackgroundColor3 = C.green,
+        BorderSizePixel = 0,
+    }, toast)
+    round(check, 16)
+    make("TextLabel", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text = "✓",
+        Font = Enum.Font.GothamBlack,
+        TextSize = 18,
+        TextColor3 = C.bg,
+    }, check)
+
+    make("TextLabel", {
+        Position = UDim2.fromOffset(58, 12),
+        Size = UDim2.new(1, -70, 0, 20),
+        BackgroundTransparency = 1,
+        Text = "Update selesai",
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        TextColor3 = C.white,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, toast)
+    make("TextLabel", {
+        Position = UDim2.fromOffset(58, 33),
+        Size = UDim2.new(1, -70, 0, 16),
+        BackgroundTransparency = 1,
+        Text = "NEXUS DELTA v" .. ver .. " siap digunakan",
+        Font = Enum.Font.GothamMedium,
+        TextSize = 11,
+        TextColor3 = C.muted,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, toast)
+
+    tween(toast, 0.45, {Position = UDim2.new(0.5, 0, 0, 24)}, Enum.EasingStyle.Back)
+    task.delay(3.6, function()
+        tween(toast, 0.3, {Position = UDim2.new(0.5, 0, 0, -90)}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        task.wait(0.35)
+        toastGui:Destroy()
+    end)
+end
+
+--==================================================
 -- BUILD UI
 --==================================================
-local old = playerGui:FindFirstChild("NEXUS_DELTA")
-if old then old:Destroy() end
+for _, name in ipairs({"NEXUS_DELTA", "NEXUS_UPDATE"}) do
+    local old = playerGui:FindFirstChild(name)
+    if old then old:Destroy() end
+end
 
 local gui = make("ScreenGui", {
-    Name = "NEXUS_DELTA",
+    Name = "NEXUS_UPDATE",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     DisplayOrder = 999,
 }, playerGui)
 
--- Overlay gelap di belakang dialog
 local overlay = make("Frame", {
     Size = UDim2.fromScale(1, 1),
     BackgroundColor3 = Color3.new(0, 0, 0),
@@ -114,7 +191,7 @@ local overlay = make("Frame", {
     Active = true,
 }, gui)
 
-local CARD_H = ALLOW_SKIP and 300 or 258
+local CARD_H = ALLOW_SKIP and 318 or 296
 
 local card = make("CanvasGroup", {
     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -128,28 +205,23 @@ round(card, 20)
 make("UIStroke", {Color = C.line, Thickness = 1}, card)
 local cardScale = make("UIScale", {Scale = 0.92}, card)
 
--- Garis aksen tipis di atas
+-- Garis aksen atas
 local accent = make("Frame", {
     Size = UDim2.new(1, 0, 0, 3),
     BackgroundColor3 = C.white,
     BorderSizePixel = 0,
 }, card)
-make("UIGradient", {
-    Color = ColorSequence.new(C.purple, C.cyan),
-}, accent)
+make("UIGradient", {Color = ColorSequence.new(C.purple, C.cyan)}, accent)
 
--- Header: ikon + judul
+-- Header
 local badge = make("Frame", {
-    Position = UDim2.fromOffset(20, 24),
+    Position = UDim2.fromOffset(20, 22),
     Size = UDim2.fromOffset(42, 42),
     BackgroundColor3 = C.white,
     BorderSizePixel = 0,
 }, card)
 round(badge, 12)
-make("UIGradient", {
-    Color = ColorSequence.new(C.purple, C.cyan),
-    Rotation = 45,
-}, badge)
+make("UIGradient", {Color = ColorSequence.new(C.purple, C.cyan), Rotation = 45}, badge)
 make("TextLabel", {
     Size = UDim2.fromScale(1, 1),
     BackgroundTransparency = 1,
@@ -160,31 +232,30 @@ make("TextLabel", {
 }, badge)
 
 make("TextLabel", {
-    Position = UDim2.fromOffset(74, 24),
+    Position = UDim2.fromOffset(74, 22),
     Size = UDim2.new(1, -94, 0, 22),
     BackgroundTransparency = 1,
-    Text = "Update Tersedia",
+    Text = "Nexus Update",
     Font = Enum.Font.GothamBold,
     TextSize = 17,
     TextColor3 = C.white,
     TextXAlignment = Enum.TextXAlignment.Left,
 }, card)
-
 make("TextLabel", {
-    Position = UDim2.fromOffset(74, 47),
+    Position = UDim2.fromOffset(74, 45),
     Size = UDim2.new(1, -94, 0, 18),
     BackgroundTransparency = 1,
-    Text = "NEXUS DELTA",
+    Text = "NEXUS DELTA • Update tersedia",
     Font = Enum.Font.GothamMedium,
     TextSize = 11,
     TextColor3 = C.muted,
     TextXAlignment = Enum.TextXAlignment.Left,
 }, card)
 
--- Baris versi: sekarang -> terbaru
+-- Baris versi
 local row = make("Frame", {
-    Position = UDim2.fromOffset(20, 84),
-    Size = UDim2.new(1, -40, 0, 54),
+    Position = UDim2.fromOffset(20, 78),
+    Size = UDim2.new(1, -40, 0, 50),
     BackgroundColor3 = C.card,
     BorderSizePixel = 0,
 }, card)
@@ -218,9 +289,38 @@ make("TextLabel", {
 }, row)
 versionLabel(0.6, "TERBARU", requiredVersion, C.green)
 
+-- Kotak alasan update
+local reasonBox = make("Frame", {
+    Position = UDim2.fromOffset(20, 136),
+    Size = UDim2.new(1, -40, 0, 48),
+    BackgroundColor3 = C.card,
+    BorderSizePixel = 0,
+}, card)
+round(reasonBox, 12)
+make("UIStroke", {Color = C.line, Thickness = 1, Transparency = 0.5}, reasonBox)
+
+local reasonLbl = make("TextLabel", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    RichText = true,
+    Text = '<font color="' .. rgbTag(C.cyan) .. '"><b>Kenapa harus update?</b></font>\n' .. reasonText,
+    Font = Enum.Font.GothamMedium,
+    TextSize = 10,
+    TextColor3 = C.muted,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Center,
+}, reasonBox)
+make("UIPadding", {
+    PaddingLeft = UDim.new(0, 12),
+    PaddingRight = UDim.new(0, 12),
+    PaddingTop = UDim.new(0, 4),
+    PaddingBottom = UDim.new(0, 4),
+}, reasonLbl)
+
 -- Progress bar
 local barBack = make("Frame", {
-    Position = UDim2.fromOffset(20, 158),
+    Position = UDim2.fromOffset(20, 196),
     Size = UDim2.new(1, -40, 0, 6),
     BackgroundColor3 = C.card,
     BorderSizePixel = 0,
@@ -236,7 +336,7 @@ round(barFill, 3)
 make("UIGradient", {Color = ColorSequence.new(C.purple, C.cyan)}, barFill)
 
 local statusLbl = make("TextLabel", {
-    Position = UDim2.fromOffset(20, 170),
+    Position = UDim2.fromOffset(20, 207),
     Size = UDim2.new(1, -90, 0, 18),
     BackgroundTransparency = 1,
     Text = "Siap untuk update",
@@ -247,7 +347,7 @@ local statusLbl = make("TextLabel", {
 }, card)
 
 local percentLbl = make("TextLabel", {
-    Position = UDim2.new(1, -70, 0, 170),
+    Position = UDim2.new(1, -70, 0, 207),
     Size = UDim2.fromOffset(50, 18),
     BackgroundTransparency = 1,
     Text = "0%",
@@ -257,21 +357,33 @@ local percentLbl = make("TextLabel", {
     TextXAlignment = Enum.TextXAlignment.Right,
 }, card)
 
--- Tombol utama
+-- Tombol utama (gradient di Frame terpisah supaya teks tetap terlihat)
 local updateBtn = make("TextButton", {
-    Position = UDim2.fromOffset(20, 200),
+    Position = UDim2.fromOffset(20, 234),
     Size = UDim2.new(1, -40, 0, 46),
+    BackgroundTransparency = 1,
+    Text = "",
+    AutoButtonColor = false,
+}, card)
+local btnScale = make("UIScale", {Scale = 1}, updateBtn)
+
+local btnFill = make("Frame", {
+    Size = UDim2.fromScale(1, 1),
     BackgroundColor3 = C.white,
     BorderSizePixel = 0,
+}, updateBtn)
+round(btnFill, 13)
+make("UIGradient", {Color = ColorSequence.new(C.purple, C.cyan)}, btnFill)
+
+local btnLabel = make("TextLabel", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
     Text = "Update Sekarang",
     Font = Enum.Font.GothamBold,
     TextSize = 14,
     TextColor3 = Color3.new(1, 1, 1),
-    AutoButtonColor = false,
-}, card)
-round(updateBtn, 13)
-make("UIGradient", {Color = ColorSequence.new(C.purple, C.cyan)}, updateBtn)
-local btnScale = make("UIScale", {Scale = 1}, updateBtn)
+    ZIndex = 2,
+}, updateBtn)
 
 updateBtn.MouseButton1Down:Connect(function()
     tween(btnScale, 0.1, {Scale = 0.96})
@@ -286,8 +398,8 @@ updateBtn.MouseLeave:Connect(releaseBtn)
 local skipBtn
 if ALLOW_SKIP then
     skipBtn = make("TextButton", {
-        Position = UDim2.fromOffset(20, 254),
-        Size = UDim2.new(1, -40, 0, 30),
+        Position = UDim2.fromOffset(20, 284),
+        Size = UDim2.new(1, -40, 0, 26),
         BackgroundTransparency = 1,
         Text = "Nanti saja",
         Font = Enum.Font.GothamMedium,
@@ -300,11 +412,9 @@ end
 --==================================================
 -- ANIMASI BUKA / TUTUP
 --==================================================
-local function openAnim()
-    tween(overlay, 0.3, {BackgroundTransparency = 0.45})
-    tween(card, 0.3, {GroupTransparency = 0})
-    tween(cardScale, 0.4, {Scale = 1}, Enum.EasingStyle.Back)
-end
+tween(overlay, 0.3, {BackgroundTransparency = 0.45})
+tween(card, 0.3, {GroupTransparency = 0})
+tween(cardScale, 0.4, {Scale = 1}, Enum.EasingStyle.Back)
 
 local function closeAnim()
     tween(card, 0.25, {GroupTransparency = 1})
@@ -313,8 +423,6 @@ local function closeAnim()
     task.wait(0.35)
     gui:Destroy()
 end
-
-openAnim()
 
 --==================================================
 -- PROSES UPDATE
@@ -328,27 +436,28 @@ end
 
 local isUpdating = false
 
+local function failUpdate(msg)
+    setProgress(0, msg, C.red)
+    btnLabel.Text = "Coba Lagi"
+    tween(btnFill, 0.2, {BackgroundTransparency = 0})
+    isUpdating = false
+end
+
 updateBtn.Activated:Connect(function()
     if isUpdating then return end
     isUpdating = true
-    updateBtn.Text = "Mengunduh..."
-    tween(updateBtn, 0.2, {BackgroundTransparency = 0.35})
+    btnLabel.Text = "Mengunduh..."
+    tween(btnFill, 0.2, {BackgroundTransparency = 0.35})
 
     task.spawn(function()
         setProgress(0.2, "Menghubungkan ke GitHub...")
         task.wait(0.3)
 
-        -- Download asli
         local ok, src = pcall(function()
             return game:HttpGet(LATEST_SCRIPT_URL .. "?v=" .. tick())
         end)
-
         if not ok or type(src) ~= "string" or #src < 20 then
-            setProgress(0, "Gagal mengunduh. Cek koneksi lalu coba lagi.", C.red)
-            updateBtn.Text = "Coba Lagi"
-            tween(updateBtn, 0.2, {BackgroundTransparency = 0})
-            isUpdating = false
-            return
+            return failUpdate("Gagal mengunduh. Cek koneksi lalu coba lagi.")
         end
 
         setProgress(0.6, "Memeriksa script...")
@@ -357,23 +466,20 @@ updateBtn.Activated:Connect(function()
         local fn, compileErr = loadstring(src)
         if not fn then
             warn("[NEXUS] Script tidak valid: " .. tostring(compileErr))
-            setProgress(0, "Script terbaru tidak valid.", C.red)
-            updateBtn.Text = "Coba Lagi"
-            tween(updateBtn, 0.2, {BackgroundTransparency = 0})
-            isUpdating = false
-            return
+            return failUpdate("Script terbaru tidak valid.")
         end
 
-        -- Salin loadstring ke clipboard (kalau executor mendukung)
         if setclipboard then
             pcall(setclipboard, 'loadstring(game:HttpGet("' .. LATEST_SCRIPT_URL .. '"))()')
         end
 
         setProgress(1, "Update selesai!", C.green)
-        updateBtn.Text = "Selesai"
+        btnLabel.Text = "Selesai ✓"
+        tween(btnFill, 0.2, {BackgroundTransparency = 0})
         task.wait(0.7)
 
         closeAnim()
+        showDoneToast(requiredVersion)
 
         local runOk, runErr = pcall(fn)
         if not runOk then
