@@ -110,6 +110,8 @@ do
 
     local TABS_FULL = {tab("Gerak", G_MOVE), tab("Teleport", G_TP), tab("Langit", G_SKY),
                        tab("Karakter", G_CHAR, G_CAM), tab("Fun", G_AURA, G_MUSIC), tab("Sistem", G_SYS)}
+    local TABS_BROOKHAVEN = {tab("Gerak", G_MOVE), tab("Teleport", G_TP), tab("RP Tools", {"buildtext", "dropitem", "avatarinfo", "sit"}, G_MUSIC),
+                       tab("Langit", G_SKY), tab("Karakter", G_CHAR, G_CAM), tab("Aura", G_AURA), tab("Sistem", G_SYS)}
     local TABS_LITE = {tab("Gerak", {"speed", "jump", "fly", "flyspeed", "infjump"}), tab("Langit", G_SKY),
                        tab("Fun", G_AURA, G_MUSIC), tab("Kamera", G_CAM, G_CHAR), tab("Sistem", G_SYS)}
     -- Mode adil (PvP / obby / racing / TD): tanpa fitur gerak
@@ -121,7 +123,7 @@ do
     end
 
     PROFILES = {
-        brookhaven = prof("Brookhaven RP", "BH", C.green, C.cyan, "Roleplay  •  Rumah  •  Kendaraan", TABS_FULL),
+        brookhaven = prof("Brookhaven RP", "BH", C.green, C.cyan, "Roleplay  •  Rumah  •  Kendaraan", TABS_BROOKHAVEN),
         adoptme    = prof("Adopt Me!", "AM", C.pink, C.purple, "Pet  •  Trading  •  Idle farming", TABS_FULL),
         mm2        = prof("Murder Mystery 2", "MM", C.orange, C.pink, "Gerak cepat  •  Navigasi map", TABS_LITE),
         bloxfruits = prof("Blox Fruits", "BF", C.blue, C.cyan, "Sea  •  Eksplorasi pulau", TABS_LITE),
@@ -240,10 +242,19 @@ end
 -- lalu langsung dijalankan. API boleh mengirim "url" untuk menimpa alamatnya.
 --==================================================
 local function latestScriptUrl(ver)
-    if config and (config.url or config.script_url) then
-        return tostring(config.url or config.script_url)
+    ver = tostring(ver or VERSION)
+    -- URL dari API hanya dipakai jika memang untuk versi yang diminta.
+    -- Ini mencegah memilih v1.3.0 tetapi mengunduh/menyalin URL v1.4.0.
+    local apiVersion = config and tostring(config.version or "") or ""
+    local apiUrl = config and (config.url or config.script_url) or nil
+    if apiUrl and apiVersion == ver and string.match(tostring(apiUrl), "^https://") then
+        return tostring(apiUrl)
     end
-    return (string.gsub(GITHUB_URL, "%-v%d+%.%d+%.%d+%.lua$", "-v" .. ver .. ".lua"))
+    local derived = string.gsub(GITHUB_URL, "%-v%d+%.%d+%.%d+%.lua([?#].*)?$", "-v" .. ver .. ".lua")
+    if derived == GITHUB_URL then
+        derived = "https://raw.githubusercontent.com/rafingepet-cyber/roblox-multimap-loader/main/delta/NEXUS-DELTA-v" .. ver .. ".lua"
+    end
+    return derived
 end
 
 local function rgbTag(c)
@@ -451,27 +462,40 @@ local function showUpdateDialog(requiredVersion)
             setProgress(0.6, "Memeriksa script...")
             task.wait(0.3)
 
-            local fn, compileErr = loadstring(src)
-            if not fn then
-                warn("[NEXUS] Script tidak valid: " .. tostring(compileErr))
+            if not string.find(src, "NEXUS DELTA", 1, true) or #src < 1000 then
+                return fail("Isi unduhan tidak cocok dengan NEXUS DELTA.")
+            end
+            local compileOk, fn, compileErr = pcall(loadstring, src)
+            if not compileOk or type(fn) ~= "function" then
+                warn("[NEXUS] Script tidak valid: " .. tostring(compileErr or fn))
                 return fail("Script terbaru tidak valid.")
             end
 
-            if setclipboard then
-                pcall(setclipboard, 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()')
+            local copied = false
+            if type(setclipboard) == "function" then
+                copied = pcall(setclipboard, 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()')
             end
 
-            setProgress(1, "Update selesai!", C.green)
-            btnLabel.Text = "Selesai ✓"
+            setProgress(1, copied and "Valid • link disalin" or "Valid • clipboard tidak tersedia", C.green)
+            btnLabel.Text = "Menjalankan v" .. requiredVersion .. "..."
             tween(btnFill, 0.2, {BackgroundTransparency = 0})
-            task.wait(0.7)
+            task.wait(0.5)
 
             closeAnim()
-            showUpdateToast(requiredVersion)
-
             local runOk, runErr = pcall(fn)
-            if not runOk then
+            if runOk then
+                showUpdateToast(requiredVersion)
+            else
                 warn("[NEXUS] Gagal menjalankan v" .. requiredVersion .. ": " .. tostring(runErr))
+                -- Beri tahu kegagalan eksekusi; jangan klaim update berhasil.
+                task.defer(function()
+                    pcall(function()
+                        local bad = make("ScreenGui", {Name = "NEXUS_UPDATE_ERROR", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 1001}, playerGui)
+                        local panel = make("TextLabel", {AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 24), Size = UDim2.fromOffset(310, 48), BackgroundColor3 = C.bg, TextColor3 = C.red, Text = "Update v" .. requiredVersion .. " terunduh, tetapi gagal dijalankan.", TextWrapped = true, Font = Enum.Font.GothamBold, TextSize = 11, BorderSizePixel = 0}, bad)
+                        round(panel, 12); stroke(panel, C.red, 1, 0.2)
+                        task.delay(4, function() if bad.Parent then bad:Destroy() end end)
+                    end)
+                end)
             end
         end)
     end)
@@ -1379,6 +1403,71 @@ do
         notify("Nilai dikembalikan", P.color)
     end)
 
+    ------------------------------------------------------------ BROOKHAVEN ROLEPLAY TOOLS (lokal)
+    local localProps = {}
+    local propIndex = 0
+    FEATURES.dropitem = action("Drop Item Dekorasi", "Letakkan prop dekoratif yang hanya terlihat olehmu", "DROP", function()
+        local root = getRoot()
+        if not root then notify("Karakter belum siap", C.red) return end
+        propIndex = propIndex % 4 + 1
+        local shapes = {
+            {name = "NX_RP_Crate", shape = Enum.PartType.Block, size = Vector3.new(1.5, 1.5, 1.5), color = Color3.fromRGB(150, 100, 60), material = Enum.Material.Wood},
+            {name = "NX_RP_Gem", shape = Enum.PartType.Ball, size = Vector3.new(1, 1, 1), color = C.cyan, material = Enum.Material.Neon},
+            {name = "NX_RP_Cone", shape = Enum.PartType.Ball, size = Vector3.new(0.8, 1.2, 0.8), color = C.orange, material = Enum.Material.SmoothPlastic},
+            {name = "NX_RP_Cube", shape = Enum.PartType.Block, size = Vector3.new(1, 1, 1), color = C.purple, material = Enum.Material.Neon},
+        }
+        local cfg = shapes[propIndex]
+        local part = make("Part", {Name = cfg.name, Shape = cfg.shape, Size = cfg.size, Color = cfg.color, Material = cfg.material,
+            Anchored = true, CanCollide = false, CanTouch = false, CanQuery = false,
+            CFrame = root.CFrame * CFrame.new(0, -1.5, -4)}, workspace)
+        table.insert(localProps, part)
+        while #localProps > 30 do local first = table.remove(localProps, 1); if first then first:Destroy() end end
+        notify("Prop lokal dibuat (" .. propIndex .. "/4)", P.color)
+    end)
+
+    FEATURES.buildtext = action("Build Text 3D", "Tampilkan tulisan roleplay lokal di depanmu", "BUAT", function()
+        local root = getRoot()
+        if not root then notify("Karakter belum siap", C.red) return end
+        local box, close = openModal("Build Text 3D • Lokal", 230)
+        local tb = make("TextBox", {Position = UDim2.fromOffset(16, 44), Size = UDim2.new(1, -32, 0, 38),
+            BackgroundColor3 = C.card2, BorderSizePixel = 0, Text = "HELLO BROOKHAVEN", PlaceholderText = "Maksimal 40 karakter",
+            PlaceholderColor3 = C.muted, TextColor3 = C.white, Font = Enum.Font.GothamBold, TextSize = 12, ClearTextOnFocus = false}, box)
+        round(tb, 10)
+        local go = smallBtn(box, "BUAT TEKS", UDim2.fromOffset(16, 92), UDim2.new(1, -32, 0, 34), P.color, C.bg)
+        go.Activated:Connect(function()
+            local textValue = string.sub((tb.Text or ""):gsub("[%c]", " "), 1, 40)
+            if textValue:gsub("%s", "") == "" then notify("Teks masih kosong", C.red) return end
+            local anchor = make("Part", {Name = "NX_RP_TextAnchor", Size = Vector3.new(0.2, 0.2, 0.2), Transparency = 1,
+                Anchored = true, CanCollide = false, CanTouch = false, CanQuery = false,
+                CFrame = root.CFrame * CFrame.new(0, 2.5, -6)}, workspace)
+            local board = make("BillboardGui", {Name = "NX_RP_Text", Size = UDim2.fromOffset(260, 64), AlwaysOnTop = true, StudsOffset = Vector3.new(0, 0, 0), Adornee = anchor}, anchor)
+            local textLabel = make("TextLabel", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = textValue,
+                TextColor3 = P.color, TextStrokeTransparency = 0.2, TextScaled = true, Font = Enum.Font.GothamBlack}, board)
+            table.insert(localProps, anchor)
+            while #localProps > 30 do local first = table.remove(localProps, 1); if first then first:Destroy() end end
+            notify("Teks lokal dibuat", P.color)
+            close()
+        end)
+    end)
+
+    FEATURES.avatarinfo = action("Info Avatar Pemain", "Lihat nama dan ID pemain untuk roleplay", "PILIH", function()
+        local box, close = openModal("Info Avatar Pemain", 300)
+        local list = make("ScrollingFrame", {Position = UDim2.fromOffset(16, 44), Size = UDim2.new(1, -32, 1, -100),
+            BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = P.color, CanvasSize = UDim2.new()}, box)
+        local ll = make("UIListLayout", {Padding = UDim.new(0, 6)}, list)
+        ll:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() list.CanvasSize = UDim2.new(0, 0, 0, ll.AbsoluteContentSize.Y) end)
+        local count = 0
+        for _, target in ipairs(Players:GetPlayers()) do
+            count += 1
+            local b = smallBtn(list, target.DisplayName .. "  •  @" .. target.Name, UDim2.new(), UDim2.new(1, -4, 0, 34), C.card2, C.white)
+            b.Activated:Connect(function()
+                notify(target.DisplayName .. "  |  UserId: " .. tostring(target.UserId), P.color)
+                close()
+            end)
+        end
+        if count == 0 then label(list, "Tidak ada pemain.", UDim2.new(), UDim2.new(1, 0, 0, 30), C.muted, 11) end
+    end)
+
     -- Hidupkan lagi efek setelah respawn
     track(player.CharacterAdded:Connect(function()
         task.wait(1)
@@ -1410,6 +1499,8 @@ do
             settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
         end)
         pcall(resetAll)
+        for _, prop in ipairs(localProps) do pcall(function() prop:Destroy() end) end
+        table.clear(localProps)
         if sound then sound:Destroy() end
     end)
 end
