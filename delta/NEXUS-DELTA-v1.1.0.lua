@@ -1,67 +1,41 @@
 --[[
 ╔══════════════════════════════════════════════╗
 ║           N E X U S   D E L T A              ║
-║    NEON CATALOG • FEATURE HUB • v1.1.0       ║
-║             UPDATE GUARD SYSTEM              ║
+║       AUTO-UPDATE & AUTO-RUN SYSTEM          ║
 ╚══════════════════════════════════════════════╝
 ]]
 
 local VERSION = "1.1.0"
 local API_URL = "https://nebul.rf.gd/api.php"
-local GITHUB_RAW_BASE = "https://raw.githubusercontent.com/rafingepet-cyber/roblox-multimap-loader/main/delta/"
-local LATEST_SCRIPT_URL = GITHUB_RAW_BASE .. "NEXUS-DELTA-v1.2.0.lua"
+local LATEST_SCRIPT_URL = "https://raw.githubusercontent.com/rafingepet-cyber/roblox-multimap-loader/main/delta/NEXUS-DELTA-v1.2.0.lua"
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
---==================================================
--- NEON PALETTE
---==================================================
-
+-- Warna Neon
 local C = {
     bg       = Color3.fromRGB(10, 14, 28),
     panel    = Color3.fromRGB(18, 24, 45),
-    card     = Color3.fromRGB(24, 32, 60),
-    card2    = Color3.fromRGB(32, 42, 78),
     white    = Color3.fromRGB(255, 255, 255),
     muted    = Color3.fromRGB(140, 160, 195),
     cyan     = Color3.fromRGB(0, 245, 255),
-    blue     = Color3.fromRGB(50, 120, 255),
     purple   = Color3.fromRGB(190, 60, 255),
     pink     = Color3.fromRGB(255, 45, 180),
-    green    = Color3.fromRGB(50, 255, 150),
-    orange   = Color3.fromRGB(255, 170, 50),
     red      = Color3.fromRGB(255, 65, 65),
-    line     = Color3.fromRGB(60, 85, 140),
 }
 
---==================================================
--- VERSION CHECKER
---==================================================
-
+-- Cek Versi ke Hosting
 local function fetchConfig()
     local ok, response = pcall(function()
         return game:HttpGet(API_URL .. "?t=" .. tick())
     end)
-
-    if not ok or type(response) ~= "string" then
-        return nil, "Gagal terhubung ke server update hosting."
-    end
-
-    local decoded, data = pcall(function()
-        return HttpService:JSONDecode(response)
-    end)
-
-    if not decoded or type(data) ~= "table" then
-        return nil, "Respon server hosting tidak valid."
-    end
-
+    if not ok or type(response) ~= "string" then return nil end
+    local decoded, data = pcall(function() return HttpService:JSONDecode(response) end)
+    if not decoded or type(data) ~= "table" then return nil end
     return data
 end
 
@@ -79,14 +53,11 @@ local function isOutdated(current, target)
     return false
 end
 
-local configData, configErr = fetchConfig()
+local configData = fetchConfig()
 local requiredVersion = (configData and configData.version) or "1.2.0"
 local needsUpdate = isOutdated(VERSION, requiredVersion)
 
---==================================================
--- UI HELPERS
---==================================================
-
+-- Helper UI sederhana
 local function make(className, props, parent)
     local obj = Instance.new(className)
     for k, v in pairs(props or {}) do obj[k] = v end
@@ -94,77 +65,7 @@ local function make(className, props, parent)
     return obj
 end
 
-local function round(object, radius)
-    make("UICorner", { CornerRadius = UDim.new(0, radius or 12) }, object)
-end
-
-local function outline(object, color, thickness)
-    return make("UIStroke", {
-        Color = color or C.cyan,
-        Thickness = thickness or 1,
-        Transparency = 0.1
-    }, object)
-end
-
-local function gradient(object, first, second, rotation)
-    make("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, first),
-            ColorSequenceKeypoint.new(1, second)
-        }),
-        Rotation = rotation or 0
-    }, object)
-end
-
-local function animate(object, properties, duration)
-    local t = TweenService:Create(
-        object,
-        TweenInfo.new(duration or 0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-        properties
-    )
-    t:Play()
-    return t
-end
-
-local function label(parent, text, position, size, color, textSize)
-    return make("TextLabel", {
-        Position = position,
-        Size = size,
-        BackgroundTransparency = 1,
-        Text = text,
-        Font = Enum.Font.GothamMedium,
-        TextSize = textSize or 12,
-        TextColor3 = color or C.white,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Center
-    }, parent)
-end
-
-local function button(parent, text, position, size, color)
-    local b = make("TextButton", {
-        Position = position,
-        Size = size,
-        BackgroundColor3 = color or C.card2,
-        BorderSizePixel = 0,
-        Text = text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 11,
-        TextColor3 = C.white,
-        AutoButtonColor = false
-    }, parent)
-
-    round(b, 10)
-    outline(b, color or C.cyan, 1)
-
-    b.MouseEnter:Connect(function() animate(b, {BackgroundColor3 = C.card2}, 0.15) end)
-    b.MouseLeave:Connect(function() animate(b, {BackgroundColor3 = color or C.card2}, 0.15) end)
-    return b
-end
-
---==================================================
--- ROOT SCREEN
---==================================================
-
+-- Bersihkan GUI lama
 local old = playerGui:FindFirstChild("NEXUS_DELTA")
 if old then old:Destroy() end
 
@@ -175,107 +76,102 @@ local gui = make("ScreenGui", {
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 }, playerGui)
 
---==================================================
--- SYSTEM 1: MANDATORY UPDATE LOCK SCREEN (v1.1.0 OUTDATED)
---==================================================
-
-if needsUpdate then
-    local lockFrame = make("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(360, 280),
-        BackgroundColor3 = C.bg,
-        BorderSizePixel = 0
-    }, gui)
-
-    round(lockFrame, 18)
-    outline(lockFrame, C.red, 2)
-
-    local lockTitle = label(lockFrame, "⚠️ UPDATE REQUIRED!", UDim2.new(0, 20, 0, 18), UDim2.new(1, -40, 0, 25), C.red, 16)
-    lockTitle.Font = Enum.Font.GothamBlack
-
-    local lockDesc = label(
-        lockFrame,
-        "Versi kamu (v" .. VERSION .. ") sudah kadaluarsa!\nVersi terbaru v" .. requiredVersion .. " tersedia di GitHub.\nHarap update terlebih dahulu untuk menggunakan script.",
-        UDim2.new(0, 20, 0, 50),
-        UDim2.new(1, -40, 0, 50),
-        C.muted,
-        10
-    )
-    lockDesc.TextWrapped = true
-
-    -- Progress Bar UI
-    local barBack = make("Frame", {
-        Position = UDim2.new(0, 20, 0, 115),
-        Size = UDim2.new(1, -40, 0, 14),
-        BackgroundColor3 = C.panel,
-        BorderSizePixel = 0
-    }, lockFrame)
-    round(barBack, 7)
-
-    local barFill = make("Frame", {
-        Size = UDim2.new(0, 0, 1, 0),
-        BackgroundColor3 = C.cyan,
-        BorderSizePixel = 0
-    }, barBack)
-    round(barFill, 7)
-    gradient(barFill, C.pink, C.cyan, 0)
-
-    local statusLbl = label(lockFrame, "Status: Menunggu tindakan...", UDim2.new(0, 20, 0, 135), UDim2.new(1, -40, 0, 20), C.cyan, 9)
-
-    local startUpdateBtn = button(lockFrame, "🚀 DOWNLOAD UPDATE v" .. requiredVersion, UDim2.new(0, 20, 0, 170), UDim2.new(1, -40, 0, 40), C.purple)
-    gradient(startUpdateBtn, C.purple, C.pink, 0)
-
-    local isUpdating = false
-    startUpdateBtn.Activated:Connect(function()
-        if isUpdating then return end
-        isUpdating = true
-        startUpdateBtn.Text = "DOWNLOADING..."
-
-        task.spawn(function()
-            local steps = {
-                {p = 15, msg = "Menghubungkan ke GitHub Raw..."},
-                {p = 40, msg = "Mengunduh NEXUS-DELTA-v" .. requiredVersion .. ".lua..."},
-                {p = 75, msg = "Verifikasi integritas kode..."},
-                {p = 95, msg = "Memasang update baru..."},
-                {p = 100, msg = "SELESAI! Salin loadstring terbaru dibawah ini."}
-            }
-
-            for _, step in ipairs(steps) do
-                animate(barFill, {Size = UDim2.new(step.p / 100, 0, 1, 0)}, 0.4)
-                statusLbl.Text = "Status: " .. step.msg
-                task.wait(0.6)
-            end
-
-            if setclipboard then
-                setclipboard('loadstring(game:HttpGet("' .. LATEST_SCRIPT_URL .. '"))()')
-                statusLbl.Text = "✅ Loadstring v" .. requiredVersion .. " tersalin ke Clipboard!"
-            else
-                statusLbl.Text = "Gunakan link baru: " .. LATEST_SCRIPT_URL
-            end
-
-            startUpdateBtn.Text = "SALIN LOADSTRING LAGI"
-            isUpdating = false
-        end)
-    end)
-
-    return -- Hentikan eksekusi di v1.1.0!
+-- Jika versi aman/terbaru, jalankan menu utama v1.1.0 (atau lewati)
+if not needsUpdate then
+    print("[NEXUS] Versi sudah paling baru.")
+    return
 end
 
---==================================================
--- SYSTEM 2: MAIN MENU (JIKA TIDAK KADALUARSA)
---==================================================
+-- ==========================================================
+-- TAMPILAN UPDATE PAKSA + AUTO RUN & CLOSE UI LAMA
+-- ==========================================================
 
-local main = make("Frame", {
+local lockFrame = make("Frame", {
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.new(0.9, 0, 0.78, 0),
+    Size = UDim2.fromOffset(360, 260),
     BackgroundColor3 = C.bg,
-    BorderSizePixel = 0,
-    ClipsDescendants = true
+    BorderSizePixel = 0
 }, gui)
 
-round(main, 20)
-outline(main, C.purple, 1.8)
+make("UICorner", { CornerRadius = UDim.new(0, 18) }, lockFrame)
+make("UIStroke", { Color = C.red, Thickness = 2 }, lockFrame)
 
-print("[NEXUS DELTA v" .. VERSION .. "] Script v1.1.0 berjalan!")
+local title = make("TextLabel", {
+    Position = UDim2.new(0, 20, 0, 18),
+    Size = UDim2.new(1, -40, 0, 25),
+    BackgroundTransparency = 1,
+    Text = "🔄 AUTO-UPDATING NEXUS...",
+    Font = Enum.Font.GothamBlack,
+    TextSize = 14,
+    TextColor3 = C.red
+}, lockFrame)
+
+local desc = make("TextLabel", {
+    Position = UDim2.new(0, 20, 0, 50),
+    Size = UDim2.new(1, -40, 0, 45),
+    BackgroundTransparency = 1,
+    Text = "Versi lama terdeteksi (v" .. VERSION .. ").\nMenyiapkan pembaruan otomatis ke v" .. requiredVersion .. "...",
+    Font = Enum.Font.GothamMedium,
+    TextSize = 10,
+    TextColor3 = C.muted,
+    TextWrapped = true
+}, lockFrame)
+
+-- Progress Bar
+local barBack = make("Frame", {
+    Position = UDim2.new(0, 20, 0, 110),
+    Size = UDim2.new(1, -40, 0, 14),
+    BackgroundColor3 = C.panel,
+    BorderSizePixel = 0
+}, lockFrame)
+make("UICorner", { CornerRadius = UDim.new(0, 7) }, barBack)
+
+local barFill = make("Frame", {
+    Size = UDim2.new(0, 0, 1, 0),
+    BackgroundColor3 = C.cyan,
+    BorderSizePixel = 0
+}, barBack)
+make("UICorner", { CornerRadius = UDim.new(0, 7) }, barFill)
+
+local statusLbl = make("TextLabel", {
+    Position = UDim2.new(0, 20, 0, 132),
+    Size = UDim2.new(1, -40, 0, 20),
+    BackgroundTransparency = 1,
+    Text = "Status: Memulai...",
+    Font = Enum.Font.GothamMedium,
+    TextSize = 9,
+    TextColor3 = C.cyan
+}, lockFrame)
+
+-- Proses Auto-Update di background
+task.spawn(function()
+    local steps = {
+        {p = 20, msg = "Menghubungkan ke GitHub..."},
+        {p = 50, msg = "Mengunduh script versi v" .. requiredVersion .. "..."},
+        {p = 80, msg = "Menutup antarmuka versi lama..."},
+        {p = 100, msg = "Berhasil! Menjalankan versi terbaru..."}
+    }
+
+    for _, step in ipairs(steps) do
+        TweenService:Create(barFill, TweenInfo.new(0.4), {Size = UDim2.new(step.p / 100, 0, 1, 0)}):Play()
+        statusLbl.Text = "Status: " .. step.msg
+        task.wait(0.5)
+    end
+
+    task.wait(0.3)
+
+    -- 1. Tutup/Hilangkan UI lama dari kamera user secara halus
+    TweenService:Create(lockFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1}):Play()
+    task.wait(0.35)
+    gui:Destroy()
+
+    -- 2. Auto-run script terbaru secara otomatis tanpa ribet
+    local success, err = pcall(function()
+        loadstring(game:HttpGet(LATEST_SCRIPT_URL .. "?t=" .. tick()))()
+    end)
+
+    if not success then
+        warn("[NEXUS] Gagal auto-run script baru: " .. tostring(err))
+    end
+end)
